@@ -31,10 +31,18 @@ namespace Vici.Core.Cache
 {
     public class SmartCache<T>
     {
-        public static DateTime Min(DateTime t1, DateTime t2)
-        {
-            return t1 < t2 ? t1 : t2;
-        }
+        private readonly Dictionary<string, LinkedListNode<CachedItem>> _dic = new Dictionary<string, LinkedListNode<CachedItem>>();
+
+        private readonly LinkedList<CachedItem> _keys = new LinkedList<CachedItem>();
+        private readonly object _lock = new object();
+        private readonly ITimeProvider _time = new RealTimeProvider();
+        private static readonly TimeSpan _noSlidingExpiration = TimeSpan.FromDays(1000);
+        private static readonly DateTime _noAbsoluteExpiration = DateTime.MaxValue;
+        private TimeSpan _defaultSlidingExpiration = _noSlidingExpiration;
+        private DateTime _defaultAbsoluteExpiration = _noAbsoluteExpiration;
+        private int _cacheSize;
+        private TimeSpan _cleanupInterval = TimeSpan.FromSeconds(60);
+        private DateTime _nextCleanup;
 
         private class CachedItem
         {
@@ -61,28 +69,20 @@ namespace Vici.Core.Cache
             }
         }
 
-        private readonly Dictionary<string, LinkedListNode<CachedItem>> _dic = new Dictionary<string, LinkedListNode<CachedItem>>();
 
-        private readonly LinkedList<CachedItem> _keys = new LinkedList<CachedItem>();
-        private readonly object _lock = new object();
-        private readonly ITimeProvider _time = new RealTimeProvider();
-        private static readonly TimeSpan _noSlidingExpiration = TimeSpan.FromDays(1000);
-        private static readonly DateTime _noAbsoluteExpiration = DateTime.MaxValue;
-        private TimeSpan _defaultSlidingExpiration = _noSlidingExpiration;
-        private DateTime _defaultAbsoluteExpiration = _noAbsoluteExpiration;
-        private int _cacheSize;
-        private TimeSpan _cleanupInterval = TimeSpan.FromSeconds(60);
-        private DateTime _nextCleanup;
-
-        public SmartCache(int cacheSize) : this(cacheSize, new RealTimeProvider())
+        public string[] Keys
         {
-        }
+            get
+            {
+                lock (_lock)
+                {
+                    string[] keys = new string[_dic.Keys.Count];
 
-        internal SmartCache(int cacheSize, ITimeProvider timeProvider)
-        {
-            _cacheSize = cacheSize;
-            _time = timeProvider;
-            _nextCleanup = _time.Now.Add(CleanupInterval);
+                    _dic.Keys.CopyTo(keys, 0);
+
+                    return keys;
+                }
+            }
         }
 
         public int ItemCount
@@ -143,6 +143,25 @@ namespace Vici.Core.Cache
             get { return _defaultAbsoluteExpiration; }
             set { _defaultAbsoluteExpiration = value; }
         }
+
+
+        public SmartCache(int cacheSize) : this(cacheSize, new RealTimeProvider())
+        {
+        }
+
+        internal SmartCache(int cacheSize, ITimeProvider timeProvider)
+        {
+            _cacheSize = cacheSize;
+            _time = timeProvider;
+            _nextCleanup = _time.Now.Add(CleanupInterval);
+        }
+
+
+        public static DateTime Min(DateTime t1, DateTime t2)
+        {
+            return t1 < t2 ? t1 : t2;
+        }
+
 
         public void ClearCache()
         {
